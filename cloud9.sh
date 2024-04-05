@@ -29,6 +29,7 @@ sudo chmod +x /usr/bin/helm
 
 echo "Configure cloud9 to access the EKS cluster"
 export ROLE=$(aws sts get-caller-identity --query Arn | awk -F '/' '{print $2}')
+export AWS_REGION=$(curl -s 169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region')
 export ACCOUNT_ID=$(aws sts get-caller-identity --output text --query Account)
 export ROLE_ARN="arn:aws:iam::$ACCOUNT_ID:role/$ROLE"
 export CLUSTER_NAME="flink-on-eks"
