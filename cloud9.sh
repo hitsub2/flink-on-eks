@@ -32,6 +32,7 @@ export ROLE=$(aws sts get-caller-identity --query Arn | awk -F '/' '{print $2}')
 export AWS_REGION=$(curl -s 169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region')
 export ACCOUNT_ID=$(aws sts get-caller-identity --output text --query Account)
 export ROLE_ARN="arn:aws:iam::$ACCOUNT_ID:role/$ROLE"
+export EMR_EXECUTION_ROLE_NAME="EMRJobExecutionRole-flink-on-eks"
 export CLUSTER_NAME="flink-on-eks"
 aws eks create-access-entry --cluster-name $CLUSTER_NAME --principal-arn $ROLE_ARN --type STANDARD
 aws eks associate-access-policy --cluster-name $CLUSTER_NAME --principal-arn $ROLE_ARN --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy --access-scope type=cluster
