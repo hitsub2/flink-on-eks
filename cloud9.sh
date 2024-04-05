@@ -28,12 +28,12 @@ sudo mv /tmp/linux-amd64/helm /usr/bin
 sudo chmod +x /usr/bin/helm
 
 echo "Configure cloud9 to access the EKS cluster"
-export ROLE=aws sts get-caller-identity --query Arn | awk -F '/' '{print $2}'
-export ACCOUNT_ID=aws sts get-caller-identity --query Account
+export ROLE=$(aws sts get-caller-identity --query Arn | awk -F '/' '{print $2}')
+export ACCOUNT_ID=$(aws sts get-caller-identity --output text --query Account)
 export ROLE_ARN="arn:aws:iam::$ACCOUNT_ID:role/$ROLE"
 export CLUSTER_NAME="eks-cluster-test"
-aws eks create-access-entry --cluster-name $CLUSTER_NAME --principal-arn $ARN --type Standard
-aws eks associate-access-policy --cluster-name $CLUSTER_NAME --principal-arn $ARN --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy
+aws eks create-access-entry --cluster-name $CLUSTER_NAME --principal-arn $ROLE_ARN --type STANDARD
+aws eks associate-access-policy --cluster-name $CLUSTER_NAME --principal-arn $ROLE_ARN --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy --access-scope type=cluster
 
-
+aws eks update-kubeconfig --name $CLUSTER_NAME
 echo "Configuring Cloud9 Done \n"
