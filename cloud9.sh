@@ -17,9 +17,9 @@ PLATFORM=$(uname -s)_$ARCH
 
 sudo curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz"
 
-sudo tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp && rm eksctl_$PLATFORM.tar.gz
+sudo tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp
 
-sudo mv /tmp/eksctl /usr/local/bin
+sudo mv /tmp/eksctl /usr/bin
 
 sudo -H -u ec2-user bash -c "eksctl completion bash >> ~/.bash_completion"
 echo "install  helm \n"
