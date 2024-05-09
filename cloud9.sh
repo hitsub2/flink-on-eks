@@ -31,12 +31,12 @@ echo "Configure cloud9 to access the EKS cluster"
 echo export ROLE=$(aws sts get-caller-identity --query Arn | awk -F '/' '{print $2}') >> /home/ec2-user/.bashrc
 echo export AWS_REGION=$(curl -s 169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region') >> /home/ec2-user/.bashrc
 echo export ACCOUNT_ID=$(aws sts get-caller-identity --output text --query Account) >> /home/ec2-user/.bashrc
-echo export ROLE_ARN="arn:aws:iam::$ACCOUNT_ID:role/$ROLE" >> /home/ec2-user/.bashrc
+echo export ROLE_ARN="arn:aws:iam::$(aws sts get-caller-identity --output text --query Account):role/$(aws sts get-caller-identity --query Arn | awk -F '/' '{print $2}')" >> /home/ec2-user/.bashrc
 echo export EMR_EXECUTION_ROLE_NAME="EMRJobExecutionRole-flink-on-eks" >> /home/ec2-user/.bashrc
 echo export CLUSTER_NAME="flink-on-eks" >> /home/ec2-user/.bashrc
 source /home/ec2-user/.bashrc
-aws eks create-access-entry --cluster-name $CLUSTER_NAME --principal-arn $ROLE_ARN --type STANDARD
-aws eks associate-access-policy --cluster-name $CLUSTER_NAME --principal-arn $ROLE_ARN --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy --access-scope type=cluster
+aws eks create-access-entry --cluster-name flink-on-eks --principal-arn "arn:aws:iam::$(aws sts get-caller-identity --output text --query Account):role/$(aws sts get-caller-identity --query Arn | awk -F '/' '{print $2}')" --type STANDARD
+aws eks associate-access-policy --cluster-name flink-on-eks --principal-arn "arn:aws:iam::$(aws sts get-caller-identity --output text --query Account):role/$(aws sts get-caller-identity --query Arn | awk -F '/' '{print $2}')" --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy --access-scope type=cluster
 
-aws eks update-kubeconfig --name $CLUSTER_NAME
+aws eks update-kubeconfig --name flink-on-eks
 echo "Configuring Cloud9 Done \n"
