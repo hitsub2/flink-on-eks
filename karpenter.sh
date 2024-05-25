@@ -224,6 +224,7 @@ spec:
     cpu: 1000
   disruption:
     consolidationPolicy: WhenEmpty
+    consolidateAfter: 30s
 
 ---
 apiVersion: karpenter.k8s.aws/v1beta1
