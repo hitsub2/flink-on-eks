@@ -7,14 +7,14 @@ AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' \
 
 curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.2/docs/install/iam_policy.json
 aws iam create-policy \
-    --policy-name AWSLoadBalancerControllerIAMPolicy \
+    --policy-name AWSLoadBalancerControllerIAMPolicy-${CLUSTER_NAME} \
     --policy-document file://iam_policy.json
 
 eksctl create iamserviceaccount \
   --cluster=${CLUSTER_NAME} \
   --namespace=kube-system \
   --name=aws-load-balancer-controller \
-  --role-name AmazonEKSLoadBalancerControllerRole \
+  --role-name AmazonEKSLoadBalancerControllerRole-${CLUSTER_NAME} \
   --attach-policy-arn=arn:aws:iam::${AWS_ACCOUNT_ID}:policy/AWSLoadBalancerControllerIAMPolicy \
   --approve
 helm repo add eks https://aws.github.io/eks-charts
