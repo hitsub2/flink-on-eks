@@ -219,6 +219,9 @@ spec:
         - key: kubernetes.io/arch
           operator: In
           values: ["amd64"]
+        - key: "karpenter.sh/capacity-type"
+          operator: In
+          values: ["on-demand"]
       nodeClassRef:
         apiVersion: karpenter.k8s.aws/v1beta1
         kind: EC2NodeClass
