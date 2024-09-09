@@ -185,7 +185,7 @@ aws ec2 create-tags \
     --tags "Key=karpenter.sh/discovery,Value=${CLUSTER_NAME}" \
     --resources ${SECURITY_GROUPS} ${SECURITY_GROUPS2}
 
-aws eks create-access-entry --cluster-name flink-on-eks --principal-arn  arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:role/KarpenterNodeRole-${CLUSTER_NAME}   --type EC2_LINUX
+aws eks create-access-entry --cluster-name airbyte-on-eks --principal-arn  arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:role/KarpenterNodeRole-${CLUSTER_NAME}   --type EC2_LINUX
 
 
 echo "######### 3of4 安装Karpenter v0.36到EKS集群....."
