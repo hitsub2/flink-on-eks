@@ -1,0 +1,1230 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  DatabasePassword:
+    AllowedPattern: '[a-zA-Z0-9]+'
+    ConstraintDescription: must contain only alphanumeric characters. Must have length 8-41.
+    Description: Database admin account password.
+    MaxLength: '41'
+    MinLength: '8'
+    Default: 'Awsuser123'
+    Type: String
+  WorkshopC9InstanceVolumeSize: 
+    Type: Number
+    Description: The Size in GB of the Cloud9 Instance Volume. 
+    Default: 50
+  NumWorkerNodes:
+    Type: Number
+    Description: Number of worker nodes to create
+    Default: 2
+  WorkerNodesInstanceType:
+    Type: String
+    Description: EC2 instance type for the worker nodes
+    Default: m5.xlarge  
+  DatabaseName:
+    Description: The name of the first database to be created when the cluster is
+      created
+    Type: String
+    Default: dev
+    AllowedPattern: "([a-z]|[0-9])+"
+  AdminUsername:
+    Description: The user name that is associated with the admin user account for the cluster that is being created
+    Type: String
+    Default: awsuser
+    AllowedPattern: "([a-z])([a-z]|[0-9])*"
+  AdminPassword:
+    Description: The password that is associated with the admin user account for the cluster that is being created. Default is Awsuser123
+    Type: String
+    Default: Awsuser123
+    NoEcho: 'true'
+    MinLength: 8
+    MaxLength: 64
+    AllowedPattern: '^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[^\x00-\x20\x22\x27\x2f\x40\x5c\x7f-\uffff]+'
+  BaseRPU:
+    Description: Base RPU for Redshift Serverless Workgroup.
+    Type: Number
+    MinValue: 32
+    MaxValue: 512
+    Default: 32
+    AllowedValues: [32,40,48,56,64,72,80,88,96,104,112,120,128,136,144,152,160,168,176,184,192,200,208,216,224,232,240,248,256,264,272,280,288,296,304,312,320,328,336,344,352,360,368,376,384,392,400,408,416,424,432,440,448,456,464,472,480,488,496,504,512]
+  PortNumber:
+    Description: The port number on which the data sharing consumer cluster accepts incoming connections.
+    Type: Number
+    Default: '5439'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Connection Details"
+        Parameters:
+          - DatabaseName
+          - AdminUsername
+          - AdminPassword
+          - BaseRPU
+          - PortNumber
+
+Mappings:
+  SubnetConfig:
+      VPC:
+        CIDR: '10.0.0.0/16'
+      PublicOne:
+        CIDR: '10.0.0.0/24'
+      PublicTwo:
+        CIDR: '10.0.1.0/24'
+      PrivateSubnetOne:
+        CIDR: '10.0.2.0/24'
+      PrivateSubnetTwo:
+        CIDR: '10.0.3.0/24'
+      PrivateSubnetThree:
+        CIDR: '10.0.4.0/24'
+  EksAmiIds:    
+    us-east-1:
+      Standard: ami-07809c837cb3ae71e
+    us-east-2:
+      Standard: ami-0d9ee0d59614b371d
+    us-west-1:
+      Standard: ami-0872090fd1077a01d
+    us-west-2:
+      Standard: ami-0ee8641d0933bf2c9
+
+Resources:
+  #============================================================================#
+  # VPC
+  #============================================================================# 
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      CidrBlock: !FindInMap ['SubnetConfig', 'VPC', 'CIDR']
+      Tags:
+        - Key: 'Name'
+          Value: 'airbyte-on-eks-VPC'
+
+  PublicSubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+         Fn::Select:
+         - 0
+         - Fn::GetAZs: {Ref: 'AWS::Region'}
+      VpcId: !Ref 'VPC'
+      CidrBlock: !FindInMap ['SubnetConfig', 'PublicOne', 'CIDR']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: 'Name'
+          Value: 'PublicSubnetOne'
+  PublicSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+         Fn::Select:
+         - 1
+         - Fn::GetAZs: {Ref: 'AWS::Region'}
+      VpcId: !Ref 'VPC'
+      CidrBlock: !FindInMap ['SubnetConfig', 'PublicTwo', 'CIDR']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: 'Name'
+          Value: 'PublicSubnetTwo'
+  PrivateSubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+         Fn::Select:
+         - 0
+         - Fn::GetAZs: {Ref: 'AWS::Region'}
+      VpcId: !Ref 'VPC'
+      CidrBlock: !FindInMap ['SubnetConfig', 'PrivateSubnetOne', 'CIDR']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: 'Name'
+          Value: 'PrivateSubnetOne'
+  PrivateSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+         Fn::Select:
+         - 1
+         - Fn::GetAZs: {Ref: 'AWS::Region'}
+      VpcId: !Ref 'VPC'
+      CidrBlock: !FindInMap ['SubnetConfig', 'PrivateSubnetTwo', 'CIDR']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: 'Name'
+          Value: 'PrivateSubnetTwo'
+  PrivateSubnetThree:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+         Fn::Select:
+         - 2
+         - Fn::GetAZs: {Ref: 'AWS::Region'}
+      VpcId: !Ref 'VPC'
+      CidrBlock: !FindInMap ['SubnetConfig', 'PrivateSubnetThree', 'CIDR']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: 'Name'
+          Value: 'PrivateSubnetThree'
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway    
+  GatewayAttachement:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref 'VPC'
+      InternetGatewayId: !Ref 'InternetGateway'
+  NatGateway1EIP: 
+    Type: AWS::EC2::EIP
+    DependsOn: GatewayAttachement
+    Properties:
+      Domain: vpc
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: 
+        Fn::GetAtt:
+         - NatGateway1EIP
+         - AllocationId
+      SubnetId: !Ref PublicSubnetOne
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachement
+    Properties:
+      RouteTableId: !Ref 'PublicRouteTable'
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref 'InternetGateway'
+  PublicSubnetOneRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetOne
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetTwoRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetTwo
+      RouteTableId: !Ref PublicRouteTable
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+  PrivateInternetRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Ref: PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:
+        Ref: NATGateway
+  PrivateSubnetOneRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetOne
+  PrivateSubnetTwoRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetTwo
+  PrivateSubnetThreeRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetThree
+
+  KafkaClientInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access via port 22 and 8081
+      VpcId: !Ref 'VPC'
+  #============================================================================#
+  # MSK
+  #============================================================================# 
+
+  CommonSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: MSK Security Group
+      VpcId: !Ref 'VPC'
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 2181
+        ToPort: 2181
+        SourceSecurityGroupId: !GetAtt KafkaClientInstanceSecurityGroup.GroupId
+      - IpProtocol: tcp
+        FromPort: 9098
+        ToPort: 9098
+        SourceSecurityGroupId: !GetAtt KafkaClientInstanceSecurityGroup.GroupId
+      - IpProtocol: tcp
+        FromPort: 9094
+        ToPort: 9094
+        SourceSecurityGroupId: !GetAtt KafkaClientInstanceSecurityGroup.GroupId
+      - IpProtocol: tcp
+        FromPort: 9092
+        ToPort: 9092
+        SourceSecurityGroupId: !GetAtt KafkaClientInstanceSecurityGroup.GroupId
+      - IpProtocol: '-1'
+        SourceSecurityGroupId: !GetAtt WorkerNodesSecurityGroup.GroupId
+  
+  AuroraDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: AuroraDBSecurityGroup
+      GroupDescription: Enable SSH access via port 22
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 3306
+        ToPort: 3306
+        SourceSecurityGroupId: !GetAtt KafkaClientInstanceSecurityGroup.GroupId
+      - IpProtocol: tcp
+        FromPort: 3306
+        ToPort: 3306
+        SourceSecurityGroupId: !GetAtt CommonSecurityGroup.GroupId
+      - IpProtocol: tcp
+        FromPort: 5432
+        ToPort: 5432
+        SourceSecurityGroupId: !GetAtt CommonSecurityGroup.GroupId
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  #============================================================================#
+  # Auorora
+  #============================================================================# 
+
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: CloudFormation managed DB subnet group.
+      SubnetIds:
+        - !Ref 'PublicSubnetOne'
+        - !Ref 'PublicSubnetTwo'
+
+  AuroraDBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: MSK Worshop DB parameter group
+      Family: aurora-mysql8.0
+      Parameters:
+        max_connections: 300
+
+
+  AuroraDBParameterGroupPostgres:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: MSK Worshop DB parameter group
+      Family: aurora-postgresql15
+      Parameters:
+        max_connections: 300
+
+  AuroraDBClusterParameterGroup:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description: 'CloudFormation Sample Aurora Cluster Parameter Group'
+      Family: aurora-mysql8.0
+      Parameters:
+        time_zone: US/Eastern
+        binlog_format: ROW
+        binlog_checksum: NONE
+
+  AuroraDBClusterParameterGroupPostgres:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description: 'CloudFormation Sample Aurora Cluster Parameter Group'
+      Family: aurora-postgresql15
+      Parameters:
+        timezone: US/Eastern
+
+  AuroraCluster:
+    Type: AWS::RDS::DBCluster
+    DependsOn:
+      - DatabaseSubnetGroup
+    Properties:
+      Engine: aurora-mysql
+      MasterUsername: 'master'
+      MasterUserPassword: !Ref DatabasePassword
+      DatabaseName: 'salesdb'
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      DBClusterParameterGroupName: !Ref AuroraDBClusterParameterGroup
+      VpcSecurityGroupIds:
+        - !Ref 'AuroraDBSecurityGroup'
+
+  AuroraDB:
+    Type: AWS::RDS::DBInstance
+    DependsOn: AuroraCluster
+    Properties:
+      Engine: aurora-mysql
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceClass: db.r5.large
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      DBParameterGroupName: !Ref AuroraDBParameterGroup
+      PubliclyAccessible: 'false'
+      DBInstanceIdentifier: !Join [ '-', ['mask-lab', 'salesdb'] ]
+      Tags:
+        - Key: 'Name'
+          Value: !Ref AWS::StackName
+
+
+  AuroraClusterPostgres:
+    Type: AWS::RDS::DBCluster
+    DependsOn:
+      - DatabaseSubnetGroup
+    Properties:
+      Engine: aurora-postgresql
+      MasterUsername: 'master'
+      MasterUserPassword: !Ref DatabasePassword
+      DatabaseName: 'metadb'
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      DBClusterParameterGroupName: !Ref AuroraDBClusterParameterGroupPostgres
+      VpcSecurityGroupIds:
+        - !Ref 'AuroraDBSecurityGroup'
+
+  AuroraDBPostgres:
+    Type: AWS::RDS::DBInstance
+    DependsOn: AuroraClusterPostgres
+    Properties:
+      Engine: aurora-postgresql
+      DBClusterIdentifier: !Ref AuroraClusterPostgres
+      DBInstanceClass: db.r5.large
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      DBParameterGroupName: !Ref AuroraDBParameterGroupPostgres
+      PubliclyAccessible: 'false'
+      DBInstanceIdentifier: !Join [ '-', ['airbyte', 'metadata-db'] ]
+      Tags:
+        - Key: 'Name'
+          Value: !Ref AWS::StackName
+
+
+  #============================================================================#
+  # Cloud9
+  #============================================================================# 
+
+  WorkshopC9SSMDocument: 
+    Type: AWS::SSM::Document
+    Properties: 
+      Tags:
+        - Key: Environment
+          Value: AWS Example
+      DocumentType: Command
+      Content: 
+        schemaVersion: '2.2'
+        description: Bootstrap Cloud9 Instance
+        mainSteps:
+        - action: aws:runShellScript
+          name: WorkshopC9bootstrap
+          inputs:
+            runCommand:
+            - !Sub |
+              #!/bin/bash
+              date
+              sleep 120
+              sudo echo LANG=en_US.utf-8 >> /etc/environment
+              sudo echo LC_ALL=en_US.UTF-8 >> /etc/environment
+              . /home/ec2-user/.bashrc
+              sudo yum -y install mysql-devel mysql sqlite telnet jq strace tree gcc glibc-static gettext bash-completion
+
+              echo '=== Resizing the Instance volume'
+              SIZE=${WorkshopC9InstanceVolumeSize}
+              export ACCOUNTID=${AWS::AccountId}
+              export REGION=${AWS::Region}
+              export EKS_CLUSTER_NAME=airbyte-on-eks
+              INSTANCEID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+              echo "Retrieved instance $INSTANCEID"
+              VOLUMEID=$(aws ec2 describe-instances \
+                --instance-id $INSTANCEID \
+                --query "Reservations[0].Instances[0].BlockDeviceMappings[0].Ebs.VolumeId" \
+                --output text --region $REGION)
+              echo "Retrieved volume $VOLUMEID"
+              aws ec2 modify-volume --volume-id $VOLUMEID --size $SIZE --region $REGION
+              while [ \
+                "$(aws ec2 describe-volumes-modifications \
+                  --volume-id $VOLUMEID \
+                  --filters Name=modification-state,Values="optimizing","completed" \
+                  --query "length(VolumesModifications)"\
+                  --output text --region $REGION)" != "1" ]; do
+              sleep 1
+              done
+              if [ $(readlink -f /dev/xvda) = "/dev/xvda" ]
+              then
+                sudo growpart /dev/xvda 1
+                STR=$(cat /etc/os-release)
+                SUB="VERSION_ID=\"2\""
+                if [[ "$STR" == *"$SUB"* ]]
+                then
+                  sudo xfs_growfs -d /
+                else
+                  sudo resize2fs /dev/xvda1
+                fi
+              else
+                sudo growpart /dev/nvme0n1 1
+                STR=$(cat /etc/os-release)
+                SUB="VERSION_ID=\"2\""
+                if [[ "$STR" == *"$SUB"* ]]
+                then
+                  sudo xfs_growfs -d /
+                else
+                  sudo resize2fs /dev/nvme0n1p1
+                fi
+              fi
+
+              echo '=== Configure .bashrc.d ==='
+              if [[ ! -d "/home/ec2-user/.bashrc.d" ]]; then
+                sudo -H -u ec2-user bash -c "mkdir -p ~/.bashrc.d"
+                sudo -H -u ec2-user bash -c "echo 'for file in ~/.bashrc.d/*.bash; do source \"\$file\"; done' >> ~/.bashrc"
+              fi
+              echo '=== install kubectl, eksctl, etc. ==='
+              sudo curl --silent --location -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
+              sudo chmod +x /usr/bin/kubectl
+              sudo -H -u ec2-user bash -c "kubectl completion bash >>  ~/.bash_completion"
+              sudo -H -u ec2-user bash -c ". /etc/profile.d/bash_completion.sh"
+              sudo -H -u ec2-user bash -c ". ~/.bash_completion"
+
+              sudo curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz"
+              tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp && rm eksctl_$PLATFORM.tar.gz
+              sudo mv /tmp/eksctl /usr/bin
+              sudo -H -u ec2-user bash -c "eksctl completion bash >> ~/.bash_completion"
+
+              sudo curl --silent --location "https://get.helm.sh/helm-v3.10.1-linux-amd64.tar.gz" | tar xz -C /tmp
+              sudo mv /tmp/linux-amd64/helm /usr/bin
+              chmod +x /usr/bin/helm
+
+              echo '=== PREPARE REBOOT in 1 minute with at ==='
+              FILE=$(mktemp) && echo $FILE && echo '#!/bin/bash' > $FILE && echo 'reboot -f --verbose' >> $FILE && at now + 1 minute -f $FILE
+              echo "Bootstrap completed with return code $?"
+
+  WorkshopC9OutputBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+
+  WorkshopC9BootstrapAssociation: 
+    Type: AWS::SSM::Association
+    DependsOn:
+    - WorkshopC9OutputBucket
+    Properties: 
+      Name: !Ref WorkshopC9SSMDocument
+      OutputLocation: 
+        S3Location:
+          OutputS3BucketName: !Ref WorkshopC9OutputBucket
+          OutputS3KeyPrefix: bootstrapoutput
+      Targets:
+        - Key: tag:SSMBootstrap
+          Values:
+          - Active
+
+  C9IDE:
+    Type: 'AWS::Cloud9::EnvironmentEC2'
+    DependsOn: WorkshopC9BootstrapAssociation
+    Properties:
+      Name: 'Cloud9-IDE'
+      Description: 'Cloud9 IDE'
+      AutomaticStopTimeMinutes: '10080'
+      SubnetId: !Ref PublicSubnetOne
+      ImageId: 'amazonlinux-2-x86_64'
+      OwnerArn: !Sub "arn:aws:sts::${AWS::AccountId}:assumed-role/${WorkshopC9OwnerRole}/MasterKey"
+      InstanceType: 'm5.large'
+
+################## LAMBDA BOOTSTRAP FUNCTION ################
+
+  WorkshopC9OwnerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AWSCloud9Administrator
+
+  WorkshopC9Role:
+    Type: AWS::IAM::Role
+    Properties:
+      Tags:
+        - Key: Environment
+          Value: AWS Example
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+            - ssm.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AdministratorAccess
+      - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Path: "/"
+
+  WorkshopC9InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - Ref: WorkshopC9Role
+
+  WorkshopC9LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName:
+          Fn::Join:
+          - ''
+          - - WorkshopC9LambdaPolicy-
+            - Ref: AWS::Region
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+            - cloudformation:DescribeStacks
+            - cloudformation:DescribeStackEvents
+            - cloudformation:DescribeStackResource
+            - cloudformation:DescribeStackResources
+            - ec2:DescribeInstances
+            - ec2:AssociateIamInstanceProfile
+            - ec2:ModifyInstanceAttribute
+            - ec2:DescribeIamInstanceProfileAssociations
+            - ec2:ReplaceIamInstanceProfileAssociation
+            - iam:ListInstanceProfiles
+            - iam:PassRole
+            - sts:AssumeRole
+            Resource: "*"
+          - Effect: Allow
+            Action:
+            - sts:AssumeRole
+            Resource: !GetAtt WorkshopC9OwnerRole.Arn
+
+
+  WorkshopC9BootstrapInstanceLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      Role:
+        Fn::GetAtt:
+        - WorkshopC9LambdaExecutionRole
+        - Arn
+      Runtime: python3.12
+      MemorySize: 256
+      Timeout: '600'
+      Code:
+        ZipFile: !Sub |
+          from __future__ import print_function
+          import boto3
+          import json
+          import os
+          import time
+          import traceback
+          import cfnresponse
+          import logging
+          logger = logging.getLogger()
+          logger.setLevel("INFO")
+          
+          def lambda_handler(event, context):
+              logger.info('event: {}'.format(event))
+              logger.info('context: {}'.format(context))
+              responseData = {}
+          
+              if event['RequestType'] == 'Create':
+                  try:
+                      # Open AWS clients
+                      ec2 = boto3.client('ec2')
+                      sts_client = boto3.client('sts')
+
+                      environmentId = event['ResourceProperties']['EnvironmentId']
+                      CommonSecurityGroupId = event['ResourceProperties']['CommonSecurityGroupId']
+                      AuroraDBSecurityGroupId = event['ResourceProperties']['AuroraDBSecurityGroupId']
+                      logger.info(AuroraDBSecurityGroupId)
+                      logger.info(CommonSecurityGroupId)
+                      assumed_role_object=sts_client.assume_role(
+                          RoleArn="${WorkshopC9OwnerRole.Arn}",
+                          RoleSessionName="MasterKey"
+                      )
+
+                      creds = assumed_role_object['Credentials']
+
+                      cloud9 = boto3.client('cloud9',
+                          aws_access_key_id=creds['AccessKeyId'],
+                          aws_secret_access_key=creds['SecretAccessKey'],
+                          aws_session_token=creds['SessionToken']
+                      )
+
+                      try:
+                        cloud9.create_environment_membership(
+                            environmentId=environmentId,
+                            permissions='read-write',
+                            userArn='arn:aws:sts::${AWS::AccountId}:assumed-role/WSParticipantRole/Participant',
+                        )
+                      except:
+                        logger.info("failed to create membership for WSParticipantRole")
+                        pass
+
+                      try:
+                        cloud9.create_environment_membership(
+                            environmentId=environmentId,
+                            permissions='read-write',
+                            userArn='arn:aws:iam::724853865853:assumed-role/Admin/dongdgy-Isengard',
+                        )
+                      except:
+                        logger.info("failed to create membership for dongdgy-Isengard")
+                        pass
+
+
+                      cloud9.update_environment(
+                          environmentId=environmentId,
+                          managedCredentialsAction='DISABLE'
+                      )
+          
+                      # Get the InstanceId of the Cloud9 IDE
+                      instance = ec2.describe_instances(Filters=[{'Name': 'tag:aws:cloud9:environment','Values': [environmentId]}])['Reservations'][0]['Instances'][0]
+                      # logger.info('instance: {}'.format(instance))
+                      logger.info("modify ec2 security group start ")
+                      existing_sg = instance['SecurityGroups'][0]['GroupId']
+                      logger.info("existing_sg: " + existing_sg)
+                      new_sg = [CommonSecurityGroupId, AuroraDBSecurityGroupId, existing_sg]
+                      logger.info("new_sg_: " + str(new_sg))
+                      ec2.modify_instance_attribute(InstanceId=instance['InstanceId'], Groups=new_sg)
+                      logger.info("modify ec2 security group done ")
+                      # Create the IamInstanceProfile request object
+                      iam_instance_profile = {
+                          'Arn': event['ResourceProperties']['LabIdeInstanceProfileArn'],
+                          'Name': event['ResourceProperties']['LabIdeInstanceProfileName']
+                      }
+                      # logger.info('iam_instance_profile: {}'.format(iam_instance_profile))
+          
+                      # Wait for Instance to become ready before adding Role
+                      instance_state = instance['State']['Name']
+                      # logger.info('instance_state: {}'.format(instance_state))
+                      while instance_state != 'running':
+                          time.sleep(5)
+                          instance_state = ec2.describe_instances(InstanceIds=[instance['InstanceId']])
+                          # logger.info('instance_state: {}'.format(instance_state))
+
+                      instance_id = instance['InstanceId']
+
+                      response = ec2.describe_iam_instance_profile_associations(
+                          Filters=[
+                              {
+                                  'Name': 'instance-id',
+                                  'Values': [instance_id],
+                              },
+                          ],
+                      )
+
+                      if len(response['IamInstanceProfileAssociations']) > 0:
+                          for association in response['IamInstanceProfileAssociations']:
+                              if association['State'] == 'associated':
+                                  print("{} is active with state {}".format(association['AssociationId'], association['State']))
+                                  ec2.replace_iam_instance_profile_association(AssociationId=association['AssociationId'], IamInstanceProfile=iam_instance_profile)
+                      else:
+                          ec2.associate_iam_instance_profile(IamInstanceProfile=iam_instance_profile, InstanceId=instance_id)
+          
+                      # attach instance profile
+                      #response = ec2.associate_iam_instance_profile(IamInstanceProfile=iam_instance_profile, InstanceId=instance['InstanceId'])
+                      # logger.info('response - associate_iam_instance_profile: {}'.format(response))
+                      r_ec2 = boto3.resource('ec2')
+  
+                      responseData = {'Success': 'Started bootstrapping for instance: '+instance['InstanceId']}
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, 'CustomResourcePhysicalID')
+                      
+                  except Exception as e:
+                      # logger.error(e, exc_info=True)
+                      responseData = {'Error': str(e)}
+                      cfnresponse.send(event, context, cfnresponse.FAILED, responseData, 'CustomResourcePhysicalID')
+              else:
+                  responseData = {'Success': 'Ignoring request'}
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, 'CustomResourcePhysicalID')
+
+  WorkshopC9BootstrapInstanceLambda:
+    Description: Bootstrap Cloud9 instance
+    Type: Custom::WorkshopC9BootstrapInstanceLambda
+    DependsOn:
+    - WorkshopC9BootstrapInstanceLambdaFunction
+    - C9IDE
+    - WorkshopC9InstanceProfile
+    - WorkshopC9LambdaExecutionRole
+    - CommonSecurityGroup
+    - AuroraDBSecurityGroup
+    Properties:
+      Tags:
+        - Key: Environment
+          Value: AWS Example
+      ServiceToken:
+        Fn::GetAtt:
+        - WorkshopC9BootstrapInstanceLambdaFunction
+        - Arn
+      REGION:
+        Ref: AWS::Region
+      StackName:
+        Ref: AWS::StackName
+      EnvironmentId:
+        Ref: C9IDE
+      AuroraDBSecurityGroupId:
+        Ref: AuroraDBSecurityGroup
+      CommonSecurityGroupId:
+        Ref: CommonSecurityGroup
+      LabIdeInstanceProfileName:
+        Ref: WorkshopC9InstanceProfile
+      LabIdeInstanceProfileArn:
+        Fn::GetAtt:
+        - WorkshopC9InstanceProfile
+        - Arn
+  #============================================================================#
+  # Control plane
+  #============================================================================#
+
+  ControlPlane:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: airbyte-on-eks
+      Version: '1.29'
+      AccessConfig:
+        AuthenticationMode: API_AND_CONFIG_MAP
+      RoleArn: !GetAtt ControlPlaneRole.Arn
+      Tags:
+        - Key: cluster
+          Value: airbyte-on-eks-workshop
+      ResourcesVpcConfig:
+        SecurityGroupIds:
+          - !Ref ControlPlaneSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnetOne
+          - !Ref PrivateSubnetTwo 
+  ControlPlaneRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+            Effect: Allow
+            Principal:
+              Service:
+                - eks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+        - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+
+  #============================================================================#
+  # Control plane security group
+  #============================================================================#
+
+  ControlPlaneSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the elastic network interfaces between the control plane and the worker nodes
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-ControlPlaneSecurityGroup"
+
+  ControlPlaneIngressFromWorkerNodesHttps:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow incoming HTTPS traffic (TCP/443) from worker nodes (for API server)
+      GroupId: !Ref ControlPlaneSecurityGroup
+      SourceSecurityGroupId: !Ref WorkerNodesSecurityGroup
+      IpProtocol: tcp
+      ToPort: 443
+      FromPort: 443
+  ControlPlaneEgressToWorkerNodesKubelet:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      Description: Allow outgoing kubelet traffic (TCP/10250) to worker nodes
+      GroupId: !Ref ControlPlaneSecurityGroup
+      DestinationSecurityGroupId: !Ref WorkerNodesSecurityGroup
+      IpProtocol: tcp
+      FromPort: 10250
+      ToPort: 10250
+  ControlPlaneEgressToWorkerNodesHttps:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      Description: Allow outgoing HTTPS traffic (TCP/442) to worker nodes (for pods running extension API servers)
+      GroupId: !Ref ControlPlaneSecurityGroup
+      DestinationSecurityGroupId: !Ref WorkerNodesSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+
+
+  #============================================================================#
+  # Worker nodes security group
+  # Note: default egress rule (allow all traffic to all destinations) applies
+  #============================================================================#
+
+  WorkerNodesSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for all the worker nodes
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-WorkerNodesSecurityGroup"
+        - Key: !Sub "kubernetes.io/cluster/${ControlPlane}"
+          Value: "owned"
+  WorkerNodesIngressFromWorkerNodes:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow all incoming traffic from other worker nodes
+      GroupId: !Ref WorkerNodesSecurityGroup
+      SourceSecurityGroupId: !Ref WorkerNodesSecurityGroup
+      IpProtocol: "-1"
+
+  WorkerNodesIngressFromControlPlaneHttps:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow incoming HTTPS traffic (TCP/443) from control plane (for pods running extension API servers)
+      GroupId: !Ref WorkerNodesSecurityGroup
+      SourceSecurityGroupId: !Ref ControlPlaneSecurityGroup
+      IpProtocol: '-1'
+
+  WorkerNodeLaunchRemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Join [ '-', [!Sub "${AWS::StackName}", "airbyte-on-eks"] ]
+      LaunchTemplateData:          
+        SecurityGroupIds:
+          - !Ref WorkerNodesSecurityGroup
+          - !Ref CommonSecurityGroup
+
+  WorkerNodesRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+              - ec2.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+
+  WorkerNodegroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn:
+      - ControlPlane
+    Properties:
+      ClusterName: airbyte-on-eks
+      NodeRole: !GetAtt WorkerNodesRole.Arn
+      InstanceTypes:
+        - Ref: WorkerNodesInstanceType
+      ScalingConfig:
+        MinSize:
+          Ref: NumWorkerNodes
+        DesiredSize:
+          Ref: NumWorkerNodes
+        MaxSize:
+          Ref: NumWorkerNodes
+      Subnets:
+        - !Ref PrivateSubnetOne
+        - !Ref PrivateSubnetTwo
+      LaunchTemplate:
+        Id: !Ref WorkerNodeLaunchRemplate
+        Version: !GetAtt WorkerNodeLaunchRemplate.DefaultVersionNumber
+
+  #============================================================================#
+  # Redshift Serverless
+  #============================================================================#
+
+  RedshiftRole:
+    Type: AWS::IAM::Role
+    Properties :
+      RoleName: RedshiftServerlessImmersionRole
+      AssumeRolePolicyDocument:
+        Version : 2012-10-17
+        Statement :
+          -
+            Effect : Allow
+            Principal :
+              Service :
+                - redshift.amazonaws.com
+            Action :
+              - sts:AssumeRole
+          -
+            Effect : Allow
+            Principal :
+              Service :
+                - redshift-serverless.amazonaws.com
+            Action :
+              - sts:AssumeRole
+          -
+            Effect : Allow
+            Principal :
+              Service :
+                - sagemaker.amazonaws.com
+            Action :
+              - sts:AssumeRole
+          -
+            Effect : Allow
+            Principal :
+              Service :
+                - events.amazonaws.com
+            Action :
+              - sts:AssumeRole
+          -
+            Effect : Allow
+            Principal :
+              Service :
+                - scheduler.redshift.amazonaws.com
+            Action :
+              - sts:AssumeRole
+      Path : /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess
+        - arn:aws:iam::aws:policy/AmazonRedshiftFullAccess
+        - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+        - arn:aws:iam::aws:policy/AmazonKinesisFullAccess
+  RedshiftSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group
+      VpcId:
+        Ref: VPC
+  SecurityGroupSelfReference:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Self Referencing Rule
+      FromPort: -1
+      IpProtocol: -1
+      GroupId: !GetAtt [RedshiftSecurityGroup, GroupId]
+      SourceSecurityGroupId: !GetAtt [RedshiftSecurityGroup, GroupId]
+      ToPort: -1
+  RedshiftServerlessNamespace:
+    Type: 'AWS::RedshiftServerless::Namespace'
+    Properties:
+      AdminUsername:
+        Ref: AdminUsername
+      AdminUserPassword:
+        Ref: AdminPassword
+      DbName:
+        Ref: DatabaseName
+      NamespaceName:  !Sub
+          - 'namespace-${RandomGUID}'
+          - { RandomGUID: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId ]]]] }
+      IamRoles:
+        - !GetAtt 'RedshiftRole.Arn'
+      DefaultIamRoleArn: !GetAtt 'RedshiftRole.Arn'
+  RedshiftServerlessWorkgroup:
+    Type: 'AWS::RedshiftServerless::Workgroup'
+    Properties:
+      WorkgroupName: !Sub
+          - 'workgroup-${RandomGUID}'
+          - { RandomGUID: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId ]]]] }
+      NamespaceName:  !Sub
+          - 'namespace-${RandomGUID}'
+          - { RandomGUID: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId ]]]] }
+      BaseCapacity:
+        Ref: BaseRPU
+      PubliclyAccessible: 'false'
+      SubnetIds:
+        - Ref: PrivateSubnetOne
+        - Ref: PrivateSubnetTwo
+        - Ref: PrivateSubnetThree
+      SecurityGroupIds:
+        - Ref: RedshiftSecurityGroup
+        - Ref: CommonSecurityGroup
+    DependsOn:
+      - RedshiftServerlessNamespace
+  RedshiftServerlessSecret:
+    Type: 'AWS::SecretsManager::Secret'
+    Properties:
+      Name: RedshiftServerlessSecret
+      Description: This secret is for Redshift Serverless 
+      SecretString: '{"username":"awsuser","password":"Awsuser123"}'
+      Tags:
+        -
+          Key: RedshiftDataFullAccess
+          Value: serverless
+
+
+  #============================================================================#
+  # Karpenter IAM and staffs
+  #============================================================================#
+
+  KarpenterNodeRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "KarpenterNodeRole-airbyte-on-eks"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                !Sub "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - !Sub "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+        - !Sub "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+        - !Sub "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+        - !Sub "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  
+  KarpenterInterruptionQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: airbyte-on-eks
+      MessageRetentionPeriod: 300
+      SqsManagedSseEnabled: true
+  KarpenterInterruptionQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref KarpenterInterruptionQueue
+      PolicyDocument:
+        Id: EC2InterruptionPolicy
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+                - sqs.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt KarpenterInterruptionQueue.Arn
+  ScheduledChangeRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      EventPattern:
+        source:
+          - aws.health
+        detail-type:
+          - AWS Health Event
+      Targets:
+        - Id: KarpenterInterruptionQueueTarget
+          Arn: !GetAtt KarpenterInterruptionQueue.Arn
+  SpotInterruptionRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      EventPattern:
+        source:
+          - aws.ec2
+        detail-type:
+          - EC2 Spot Instance Interruption Warning
+      Targets:
+        - Id: KarpenterInterruptionQueueTarget
+          Arn: !GetAtt KarpenterInterruptionQueue.Arn
+  RebalanceRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      EventPattern:
+        source:
+          - aws.ec2
+        detail-type:
+          - EC2 Instance Rebalance Recommendation
+      Targets:
+        - Id: KarpenterInterruptionQueueTarget
+          Arn: !GetAtt KarpenterInterruptionQueue.Arn
+  InstanceStateChangeRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      EventPattern:
+        source:
+          - aws.ec2
+        detail-type:
+          - EC2 Instance State-change Notification
+      Targets:
+        - Id: KarpenterInterruptionQueueTarget
+          Arn: !GetAtt KarpenterInterruptionQueue.Arn
+
+
+Outputs:
+  VPCId: 
+    Description: The ID of the VPC created
+    Value: !Ref 'VPC'
+  PublicSubnetOne: 
+    Description: The name of the public subnet created
+    Value: !Ref 'PublicSubnetOne'
+  PrivateSubnetOne: 
+    Description: The ID of private subnet one created
+    Value: !Ref 'PrivateSubnetOne'
+  PrivateSubnetTwo: 
+    Description: The ID of private subnet two created
+    Value: !Ref 'PrivateSubnetTwo'
+  PrivateSubnetThree: 
+    Description: The ID of private subnet three created
+    Value: !Ref 'PrivateSubnetThree'
+  CommonSecurityGroupID: 
+    Description: The ID of the security group created for the MSK clusters
+    Value: !GetAtt CommonSecurityGroup.GroupId
+  RedshiftNamespaceName:
+    Description: Namespace Name
+    Value:
+      Ref: RedshiftServerlessNamespace
+  RedshiftWorkgroupname:
+    Description: Workgroup Name
+    Value:
+      Ref: RedshiftServerlessWorkgroup
+  RedshiftAdminUsername:
+    Description: Username to login to your Redshift cluster
+    Value:
+      Ref: AdminUsername
+  RedshiftAdminPassword:
+    Description: Username to login to your Redshift cluster
+    Value:
+      Ref: AdminPassword
+  RedshiftPortNumber:
+    Description: Redshift port number for connections and security
+    Value:
+      Ref: PortNumber
+  RedshiftRoleName:
+    Description: Name of Redshift Role
+    Value:
+      Ref: RedshiftRole
+  RedshiftRoleNameArn:
+    Description: Name of Redshift Role with ARN FN tag
+    Value:
+      Fn::GetAtt: [RedshiftRole, Arn]
+  RedshiftClusterSecurityGroupName:
+    Description: Name of security group
+    Value:
+      Ref: RedshiftSecurityGroup
+  RedshiftServerlessEndpoint:
+    Description: Redshift Serverless endpoint
+    Value: 
+      Fn::Join: 
+        - ':'
+        - - Fn::GetAtt: [RedshiftServerlessWorkgroup, Workgroup.Endpoint.Address]
+          - "5439"   
+  Cloud9IDE:
+    Value:
+      Fn::Join:
+      - ''
+      - - https://
+        - Ref: AWS::Region
+        - ".console.aws.amazon.com/cloud9/ide/"
+        - Ref: C9IDE
+        - "?region="
+        - Ref: AWS::Region
