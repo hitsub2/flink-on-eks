@@ -5,7 +5,7 @@ CLUSTER_NAME=airbyte-on-eks
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' \
     --output text)
 
-curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.2/docs/install/iam_policy.json
+curl -o iam-policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.9.0/docs/install/iam_policy.json
 aws iam create-policy \
     --policy-name AWSLoadBalancerControllerIAMPolicy-${CLUSTER_NAME} \
     --policy-document file://iam_policy.json
@@ -15,7 +15,7 @@ eksctl create iamserviceaccount \
   --namespace=kube-system \
   --name=aws-load-balancer-controller \
   --role-name AmazonEKSLoadBalancerControllerRole-${CLUSTER_NAME} \
-  --attach-policy-arn=arn:aws:iam::${AWS_ACCOUNT_ID}:policy/AWSLoadBalancerControllerIAMPolicy \
+  --attach-policy-arn=arn:aws:iam::${AWS_ACCOUNT_ID}:policy/AWSLoadBalancerControllerIAMPolicy-${CLUSTER_NAME} \
   --approve
 helm repo add eks https://aws.github.io/eks-charts
 helm repo update eks
