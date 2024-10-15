@@ -21,6 +21,11 @@ sudo tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp
 
 sudo mv /tmp/eksctl /usr/bin
 
+YQ_VERSION=$(curl -s https://api.github.com/repos/mikefarah/yq/releases/latest | grep tag_name | cut -d '"' -f 4)
+YQ_BINARY=yq_linux_amd64
+sudo wget https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY} -O /usr/local/bin/yq
+sudo chmod +x /usr/local/bin/yq
+
 sudo -H -u ec2-user bash -c "eksctl completion bash >> ~/.bash_completion"
 echo "install  helm \n"
 sudo curl --silent --location "https://get.helm.sh/helm-v3.10.1-linux-amd64.tar.gz" | tar xz -C /tmp
